@@ -37,6 +37,8 @@ OS_TOKEN_COUNT = 1535
 
 texts = ["foo", "bar", "baz", "It is the end of the world. Take shelter!"]
 
+
+
 class FakeEmbeddings(Embeddings):
     """Fake embeddings functionality for testing."""
 

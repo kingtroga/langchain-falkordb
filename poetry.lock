@@ -352,6 +352,19 @@ files = [
 test = ["pytest (>=6)"]
 
 [[package]]
+name = "falkordb"
+version = "1.0.10"
+description = "Python client for interacting with FalkorDB database"
+optional = false
+python-versions = "<4.0,>=3.8"
+files = [
+    {file = "falkordb-1.0.10.tar.gz", hash = "sha256:f3db65e4e1f85f1b68a8cda97b1f7d756af4942a88712696fb2cfa53537025b8"},
+]
+
+[package.dependencies]
+redis = ">=5.0.1,<6.0.0"
+
+[[package]]
 name = "frozenlist"
 version = "1.5.0"
 description = "A list-like structure which implements collections.abc.MutableSequence"
@@ -1516,6 +1529,24 @@ files = [
 ]
 
 [[package]]
+name = "redis"
+version = "5.2.0"
+description = "Python client for Redis database and key-value store"
+optional = false
+python-versions = ">=3.8"
+files = [
+    {file = "redis-5.2.0-py3-none-any.whl", hash = "sha256:ae174f2bb3b1bf2b09d54bf3e51fbc1469cf6c10aa03e21141f51969801a7897"},
+    {file = "redis-5.2.0.tar.gz", hash = "sha256:0b1087665a771b1ff2e003aa5bdd354f15a70c9e25d5a7dbf9c722c16528a7b0"},
+]
+
+[package.dependencies]
+async-timeout = {version = ">=4.0.3", markers = "python_full_version < \"3.11.3\""}
+
+[package.extras]
+hiredis = ["hiredis (>=3.0.0)"]
+ocsp = ["cryptography (>=36.0.1)", "pyopenssl (==23.2.1)", "requests (>=2.31.0)"]
+
+[[package]]
 name = "requests"
 version = "2.32.3"
 description = "Python HTTP for Humans."
@@ -1868,4 +1899,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<4.0"
-content-hash = "9671bfa2b18d7c177da24e90891682c84366e6b1187167d4d8979e4d32bc91db"
+content-hash = "a822240ea5a48c2f6503bcbf5a8ac5ca2b04a1399f0054914a043b12270ae003"
