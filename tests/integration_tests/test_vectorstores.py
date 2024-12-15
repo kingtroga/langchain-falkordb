@@ -46,7 +46,7 @@ texts = ["foo", "bar", "baz", "It is the end of the world. Take shelter!", "new 
 
 
 
-class TestChromaStandard(ReadWriteTestSuite):
+class TestFalkorDB(ReadWriteTestSuite):
     @pytest.fixture()
     def vectorstore(self) -> Generator[VectorStore, None, None]:  # type: ignore
         """Get an empty vectorstore for unit tests."""
