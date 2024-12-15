@@ -749,18 +749,18 @@ typing-extensions = ">=4.7"
 
 [[package]]
 name = "langchain-tests"
-version = "0.3.4"
+version = "0.3.5"
 description = "Standard tests for LangChain implementations"
 optional = false
 python-versions = "<4.0,>=3.9"
 files = [
-    {file = "langchain_tests-0.3.4-py3-none-any.whl", hash = "sha256:b9b83c10081cb99863911958d65383ab132d950367cf94145d46f1a1d2a0dc58"},
-    {file = "langchain_tests-0.3.4.tar.gz", hash = "sha256:48150020d74d59767538e7d243ee7b8f656f038fe857ef91129279a1bc960876"},
+    {file = "langchain_tests-0.3.5-py3-none-any.whl", hash = "sha256:60aaffd9e259a5dd94d0544666dc6adeb3a4c932dca6608e19c08764e5bfe9ce"},
+    {file = "langchain_tests-0.3.5.tar.gz", hash = "sha256:3af869756ddc2069ec6f1ec1beda72e6d672b64d4d9d8f81c968d82be257df69"},
 ]
 
 [package.dependencies]
 httpx = ">=0.27.0,<0.28.0"
-langchain-core = ">=0.3.19,<0.4.0"
+langchain-core = ">=0.3.21,<0.4.0"
 pytest = ">=7,<9"
 syrupy = ">=4,<5"
 
@@ -1899,4 +1899,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.9,<4.0"
-content-hash = "a822240ea5a48c2f6503bcbf5a8ac5ca2b04a1399f0054914a043b12270ae003"
+content-hash = "1b0fe145541a43abf7cc11a59bc4220b9e43487bfd2f408eb68ae3457c741e5e"

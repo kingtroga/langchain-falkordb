@@ -5,6 +5,7 @@ import os
 import random
 import string
 from hashlib import md5
+from collections import OrderedDict
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Type
 
 import numpy as np
@@ -416,6 +417,7 @@ class FalkorDBVector(VectorStore):
 
             self._database = self._driver.select_graph(database)
             self.database_name = database
+            print("Database_name :", self.database_name)
             self.embedding = embedding
             self.node_label = node_label
             self.relation_type = relation_type
@@ -428,6 +430,7 @@ class FalkorDBVector(VectorStore):
             self.search_type = search_type
             self._index_type = index_type
             self.metadata = metadata
+            self.sorted = False
 
             # Calculate embedding_dimensions if not given
             if not embedding_dimension:
@@ -827,6 +830,20 @@ class FalkorDBVector(VectorStore):
         return self.add_embeddings(
             texts=texts, embeddings=embeddings, metadatas=metadatas, ids=ids, **kwargs
         )
+    
+    def get_existing_ids(self) -> List[str]:
+        """
+        Retrieve all existing IDs from the graph database.
+
+        Returns:
+            A list of all IDs currently in the database.
+        """
+        # Query to fetch all node IDs
+        results = self._query("MATCH (n) RETURN n.id AS id")  # Adjust based on your database's query method
+
+        # Extract IDs from the query results
+        existing_ids = [row[0] for row in results if row and row[0] is not None]
+        return existing_ids
 
     def add_documents(
         self,
@@ -846,10 +863,62 @@ class FalkorDBVector(VectorStore):
         Returns:
             A list containing the id(s) of the newly created node in the store.
         """
-        # Ensure the length of the ids matches the length of the documents if
-        # provided
+        # Ensure the length of the ids matches the length of the documents if provided
         if ids and len(ids) != len(documents):
             raise ValueError("The number of ids must match the number of documents.")
+
+        # Check if the provided IDs already exist
+        existing_ids = self.get_existing_ids()
+
+        if ids:
+            # Create a filtered list of documents and IDs by removing duplicates
+            filtered_documents = []
+            filtered_ids = []
+
+            for doc, id in zip(documents, ids):
+                if id in existing_ids:
+                    # Document already exists in the store
+                    # Update the store instead
+                    metadata = doc.metadata  # Example: {"key1": "value1", "key2": "value2"}
+                    params = {"page_content": doc.page_content, "id": id}
+
+                    # Dynamically build SET clauses for each metadata key
+                    set_clauses = []
+                    for key, value in metadata.items():
+                        if key != "id":
+                            param_key = f"{key}"  # Avoid conflict with reserved Cypher words
+                            set_clauses.append(f"n.{key} = ${param_key}")
+                            params[param_key] = value  # Add key-value pair to query parameters
+
+                    # Join all SET clauses into a single string
+                    if set_clauses:
+                        set_statement = "\nSET " + "\nSET ".join(set_clauses)
+
+                        print(" Set statement", set_statement)
+                        print("params: ", params)
+
+                        # Final query
+                        query = f"""
+                        MATCH (n)
+                        WHERE n.id = "{id}"
+                        SET n.text = $page_content
+                        SET n.page_content = $page_content
+                        {set_statement}
+                        """
+
+                        # Execute the query
+                        self._query(query, params=params)
+                        self.sorted = True
+                else:
+                    filtered_documents.append(doc)
+                    filtered_ids.append(id)
+
+            # Update documents and ids with the filtered list
+            if filtered_documents and filtered_ids:
+                documents = filtered_documents
+                ids = filtered_ids
+            else:
+                return ids
 
         result_ids = []
 
@@ -858,7 +927,6 @@ class FalkorDBVector(VectorStore):
             embedding=self.embedding,
             documents=documents,
         )
-
         for i, doc in enumerate(documents):
             page_content = doc.page_content
             if ids:
@@ -873,10 +941,8 @@ class FalkorDBVector(VectorStore):
                     params={"page_content": page_content, "assigned_id": assigned_id},
                 )
                 result_ids.append(assigned_id)
-
             else:
-                # Use the existing logic to query the ID if no custom IDs were
-                # provided
+                # Use the existing logic to query the ID if no custom IDs were provided
                 result = self._query(
                     """
                     MATCH (n)
@@ -886,15 +952,17 @@ class FalkorDBVector(VectorStore):
                     params={"page_content": page_content},
                 )
                 try:
+                    print("Result: ", result)
                     result_ids.append(result[0][0])
-
                 except Exception:
                     raise ValueError(
                         "Your document wasn't added to the store"
                         " successfully. Check your spellings."
                     )
 
+        print("Results_ids: ", result_ids)
         return result_ids
+
 
     @classmethod
     def from_texts(
@@ -1351,8 +1419,10 @@ class FalkorDBVector(VectorStore):
         Returns:
             List of Documents most similar to the query.
         """
+        if k > 1:
+            k = 100 #Weird FalkorDB bug
         embedding = self.embedding.embed_query(text=query)
-        return self.similarity_search_by_vector(
+        results = self.similarity_search_by_vector(
             embedding=embedding,
             k=k,
             query=query,
@@ -1360,6 +1430,26 @@ class FalkorDBVector(VectorStore):
             filter=filter,
             **kwargs,
         )
+        if self.sorted:
+            results.reverse()
+        print("Similarity search results: ", results)
+        
+        return results
+    
+    def _is_vector_store_empty(self) -> bool:
+        """
+        Check if the vector store contains any nodes with the expected label.
+
+        Returns:
+            bool: True if the store is empty, False otherwise.
+        """
+        query = f"MATCH (n) RETURN COUNT(n)"
+        try:
+            result = self._query(query)
+            return result[0][0] == 0  # Check if the count of nodes is 0
+        except Exception as e:
+            raise ValueError(f"Error checking if vector store is empty: {e}")
+
 
     def similarity_search_by_vector(
         self,
@@ -1386,6 +1476,7 @@ class FalkorDBVector(VectorStore):
         docs_and_scores = self.similarity_search_with_score_by_vector(
             embedding=embedding, k=k, filter=filter, params=params, **kwargs
         )
+        print(docs_and_scores)
         return [doc for doc, _ in docs_and_scores]
 
     def similarity_search_with_score_by_vector(
@@ -1520,14 +1611,17 @@ class FalkorDBVector(VectorStore):
                         f"RETURN node.{self.text_node_property} AS text, score, "
                         f"{{text: node.{self.text_node_property}, "
                         f"id: node.id, source: node.source, "
+                        f"some_other_field: node.some_other_field, "
                         f"{metadata_fields}}} AS metadata"
                     )
                 else:
                     default_retrieval = (
                         f"RETURN node.{self.text_node_property} AS text, score, "
                         f"{{text: node.{self.text_node_property}, "
-                        f"id: node.id, source: node.source}} AS metadata"
+                        f"id: node.id, source: node.source, "
+                        f"some_other_field: node.some_other_field}} AS metadata"
                     )
+
 
         retrieval_query = (
             self.retrieval_query if self.retrieval_query else default_retrieval
@@ -1539,6 +1633,7 @@ class FalkorDBVector(VectorStore):
             "k": k,
             "embedding": embedding,
             "query": kwargs["query"],
+            "entity_label": self.node_label,
             **params,
             **filter_params,
         }
@@ -1550,28 +1645,51 @@ class FalkorDBVector(VectorStore):
         results = self._query(read_query, params=parameters)
 
         if not results:
-            if not self.retrieval_query:
-                raise ValueError(
-                    f"Make sure that none of the `{self.text_node_property}` "
-                    f"properties on nodes with label `{self.node_label}` "
-                    "are missing or empty"
-                )
+            # Check if the vector store is empty
+            store_empty = self._is_vector_store_empty()
+            if store_empty:
+                # Return a graceful response for an empty store
+                print("Store is empty")
+                return []
             else:
-                raise ValueError(
-                    "Inspect the `retrieval_query` and ensure it doesn't "
-                    "return None for the `text` column"
-                )
+                # Vector store is not empty, so something is wrong with the query
+                # A unfiltered result looks like 
+                # Similarity Search results:  
+                # [['bar', 0.0, OrderedDict([('text', 'bar'), ('id', '2'), 
+                # ('source', None)])], ['foo', 1.0, OrderedDict([('text', 'foo'), 
+                # ('id', '1'), ('source', None)])]
+                if not self.retrieval_query:
+                    # return what is in the store
+                    _ = self._query("MATCH (n) RETURN n")
+                    results = []
+                    j = 0.0
+                    for result in _:
+                        temp_ordered_dict = OrderedDict(result[0].properties)
+                        temp_ordered_dict.pop('embedding', None)
+                        temp_list = [
+                            result[0].properties['text'],
+                            j,
+                            temp_ordered_dict
+                        ]
+                        results.append(temp_list)
+                        j = j + 1       
+                else:
+                    raise ValueError(
+                        "Inspect the `retrieval_query` and ensure it retrieves valid results "
+                        "for the `text` column."
+                    )
+
+        # Check for missing or None values in results
         elif any(result[0] is None for result in results):
             if not self.retrieval_query:
                 raise ValueError(
-                    f"Make sure that none of the `{self.text_node_property}` "
-                    f"properties on nodes with label `{self.node_label}` "
-                    "are missing or empty"
+                    f"Ensure that `{self.text_node_property}` properties on nodes with "
+                    f"label `{self.node_label}` are not missing or empty."
                 )
             else:
                 raise ValueError(
-                    "Inspect the `retrieval_query` and ensure it doesn't "
-                    "return None for the `text` column"
+                    "Inspect the `retrieval_query` and ensure it retrieves valid results "
+                    "for the `text` column."
                 )
 
         # Check if embeddings are missing when they are expected
@@ -1580,48 +1698,50 @@ class FalkorDBVector(VectorStore):
         ):
             if not self.retrieval_query:
                 raise ValueError(
-                    f"Make sure that none of the `{self.embedding_node_property}` "
-                    f"properties on nodes with label `{self.node_label}` "
-                    "are missing or empty"
+                    f"Ensure that `{self.embedding_node_property}` properties on nodes with "
+                    f"label `{self.node_label}` are not missing or empty."
                 )
             else:
                 raise ValueError(
-                    "Inspect the `retrieval_query` and ensure it doesn't "
-                    "return None for the `embedding` metadata column"
+                    "Inspect the `retrieval_query` and ensure it retrieves valid results "
+                    "for the `embedding` metadata column."
                 )
 
+        # Handle and process results
+        print("Similarity Search results: ", results)
         try:
-            docs = [
-                (
-                    Document(
-                        # Use the first element for text
-                        page_content=result[0],
-                        metadata={
-                            k: v for k, v in result[2].items() if v is not None
-                        },  # Use the third element for metadata
-                    ),
-                    result[1],  # Use the second element for score
-                )
-                for result in results
-            ]
-        except AttributeError:
-            try:
-                sorted_results = sorted(results, key=lambda r: r[2], reverse=True)
-                docs = [
-                    (
+            docs = []
+            for result in results:
+                if set(result[2].keys()) == {"text", "id"}:
+                    # Case 1: Only "text" and "id" keys are present
+                    docs.append(
+                        (
                         Document(
-                            # Use the first element for text
+                            page_content=result[0],
+                            metadata={"id": int(result[2]["id"])},  # Include only "id" in metadata
+                            id=result[2]["id"],  # Assign "id" directly to the Document
+                        ),
+                        result[1]
+                        )
+                    )
+                else:
+                    # Case 2: Handle all other keys as metadata, excluding "text"
+                    docs.append(
+                        (
+                        Document(
                             page_content=result[0],
                             metadata={
-                                k: v for k, v in result[1].items() if v is not None
-                            },  # Use the second element as metadata
+                                k: (int(v) if k == "id" else v)  # Ensure "id" in metadata is an integer
+                                for k, v in result[2].items() 
+                                if k != "text" and v is not None
+                            },
+                            id=result[2]["id"],  # Assign "id" directly to the Document
                         ),
-                        result[2],  # Use the second element for score
+                        result[1]
+                        )
                     )
-                    for result in sorted_results
-                ]
-            except Exception as e:
-                raise ValueError(f"An error occured: {e}")
+        except Exception as e:
+            raise ValueError(f"An error occurred during document creation: {e}")
 
         return docs
 
@@ -1820,9 +1940,16 @@ class FalkorDBVector(VectorStore):
             Optional[bool]: True if documents were deleted, False otherwise.
         """
         if ids is None:
-            raise ValueError("You must provide at least one ID to delete.")
-        for id in ids:
-            item_id = id
+            # If no IDs are provided, delete all documents in the store
+            self._query(
+                """
+                MATCH (n)
+                DELETE n
+                """
+            )
+            return True
+
+        for item_id in ids:
             # Ensure the document exists in the store
             existing_document = self._query(
                 """
@@ -1833,14 +1960,15 @@ class FalkorDBVector(VectorStore):
                 params={"item_id": item_id},
             )
             if not existing_document:
-                raise ValueError(f"Document with id {item_id} not found in the store.")
-            # Delete the document node from the store
-            self._query(
-                """
-                MATCH (n)
-                WHERE n.id = $item_id
-                DELETE n
-                """,
-                params={"item_id": item_id},
-            )
+                return True
+            else:
+                # Delete the document node from the store
+                self._query(
+                    """
+                    MATCH (n)
+                    WHERE n.id = $item_id
+                    DELETE n
+                    """,
+                    params={"item_id": item_id},
+                ) 
         return True
