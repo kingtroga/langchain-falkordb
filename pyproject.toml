@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "langchain-falkordb"
-version = "0.1.0"
+version = "0.1.2"
 description = ""
 authors = ["kingtroga <trogaclassicman@gmail.com>"]
 readme = "README.md"
